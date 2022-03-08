@@ -28,11 +28,11 @@ func main() {
 	str, _ := os.Getwd()
 
 	// 启动进程
-	run := make(chan struct{}, 1)
+	//run := make(chan struct{}, 1)
 	stop := make(chan struct{}, 1)
 	quit := make(chan int, 1)
 	log.Println("监听当前所在目录=========== ", str)
-	go start(run, stop, quit, targetInstruction)
+	go start(quit, targetInstruction)
 
 	// 创建监听
 	watcher, err := fsnotify.NewWatcher()
@@ -51,17 +51,17 @@ func main() {
 					return
 				}
 				if event.Op&fsnotify.Write == fsnotify.Write {
-
-					log.Println("监听到文件修改了，进行进程重启.......", event.Name)
-
 					// 进行热重启-
+					log.Println("监听到文件修改了，进行进程重启.......", event.Name)
 					stop <- struct{}{}
+					stop_(stop, quit)
+					go start(quit, targetInstruction)
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
 					return
 				}
-				log.Println("error:", err)
+				log.Println("监听错误error:", err)
 			}
 		}
 	}()
@@ -71,44 +71,43 @@ func main() {
 		err = watcher.Add(fileName)
 	}
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("错误信息：", err)
 	}
 
 	<-done
 }
 
 // 启动进程
-func start(run, stop chan struct{}, quit chan int, targetInstruction string) {
-	for {
-		select {
-		case run <- struct{}{}:
-			cmd := exec.Command("/bin/bash", "-c", targetInstruction)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+func start(quit chan int, targetInstruction string) {
+	cmd := exec.Command("/bin/bash", "-c", targetInstruction)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-			// start
-			log.Println("启动swoft.......", cmd.Args)
-			err := cmd.Start()
-			if err != nil {
-				panic(err)
-			}
-
-			// 获取进程号
-			log.Println("pid 是：.", cmd.Process.Pid)
-			quit <- cmd.Process.Pid
-		case <-stop:
-			pid, _ := <-quit
-			log.Println("正在重启swoft......", pid)
-			cmd := exec.Command("/bin/bash", "-c", "kill -9 "+strconv.Itoa(pid))
-			err := cmd.Run()
-			if err != nil {
-				log.Fatalf("命令错误: %v", err)
-			}
-
-			<-run
-		}
+	// start
+	log.Println("启动swoft.......", cmd.Args)
+	err := cmd.Start()
+	if err != nil {
+		panic(err)
 	}
 
+	// 获取进程号
+	log.Println("pid 是：.", cmd.Process.Pid)
+	quit <- cmd.Process.Pid
+}
+
+func stop_(stop chan struct{}, quit chan int) {
+	pid, _ := <-quit
+
+	log.Println("结束进程：", pid)
+	cmd := exec.Command("/bin/bash", "-c", "/bin/kill -9 "+strconv.Itoa(pid))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Start()
+	if err != nil {
+		log.Fatalf("命令错误: %v", err)
+	}
+
+	<-stop
 }
 
 // 获取文件列表
