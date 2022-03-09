@@ -47,9 +47,13 @@ func main() {
 		for {
 			select {
 			case event, ok := <-watcher.Events:
+
+				log.Println("事件。。。:", event)
+
 				if !ok {
 					return
 				}
+
 				if event.Op&fsnotify.Write == fsnotify.Write {
 					// 进行热重启-
 					log.Println("监听到文件修改了，进行进程重启.......", event.Name)
